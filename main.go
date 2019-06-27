@@ -9,8 +9,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"flag"
+	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +20,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/domainr/dnsr"
 	"github.com/miekg/dns"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type server struct {
@@ -135,12 +137,12 @@ func (s *server) queryHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if e, ok := err.(net.Error); ok && e.Timeout() {
 				if s.verbose {
-					log.Printf("%s <%s/%s> (timeout)\n", r.Method, n, t)
+					log.Errorf("%s <%s/%s> (timeout)\n", r.Method, n, t)
 				}
 				http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 			} else if err != nil {
 				if s.verbose {
-					log.Printf("%s <%s/%s> (%s) %s\n", r.Method, n, t, elapsed, err.Error())
+					log.Errorf("%s <%s/%s> (%s) %s\n", r.Method, n, t, elapsed, err.Error())
 				}
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
@@ -154,7 +156,7 @@ func (s *server) queryHandler(w http.ResponseWriter, r *http.Request) {
 			err = nil
 		}
 		if err != nil {
-			log.Printf("%s Request for <%s/%s> %s\n", r.Method, n, t, err.Error())
+			log.Errorf("%s Request for <%s/%s> %s\n", r.Method, n, t, err.Error())
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -162,7 +164,7 @@ func (s *server) queryHandler(w http.ResponseWriter, r *http.Request) {
 		for _, rr := range rrs {
 			newRR, err := dns.NewRR(rr.String())
 			if err != nil {
-				log.Println(err)
+				log.Error(err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
@@ -171,13 +173,13 @@ func (s *server) queryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		packed, err = response.Pack()
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 	}
 	if s.verbose {
-		log.Printf("%s Request for <%s/%s> (%s)\n", r.Method, n, t, elapsed.String())
+		log.Debugf("%s Request for <%s/%s> (%s)\n", r.Method, n, t, elapsed.String())
 	}
 	w.Header().Set("Content-Type", "application/dns-udpwireformat")
 	w.Write(packed)
@@ -267,14 +269,28 @@ func LambdaHandler(r events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 }
 
 func main() {
+	log.SetFormatter(&log.TextFormatter{
+		DisableColors: false,
+		FullTimestamp: true,
+	})
+
+	log.Infoln("Starting HTTP to DNS server...")
+
 	if os.Getenv("LAMBDA_TASK_ROOT") != "" {
 		lambda.Start(LambdaHandler)
 	} else {
 		verbose := flag.Bool("verbose", false, "enable verbose logging")
+		port := flag.Int("port", 9091, "server port")
 		capacity := flag.Int("capacity", 1000000, "capacity of the resolver cache")
 		upstream := flag.String("upstream", "", "upstream dns server (eg. '127.0.0.1:53'). If not set, use internal resolver.")
 		timeout := flag.Duration("timeout", 2500*time.Millisecond, "query timeout")
 		flag.Parse()
+
+		if *verbose {
+			log.SetLevel(log.DebugLevel)
+		} else {
+			log.SetLevel(log.InfoLevel)
+		}
 
 		srv := &server{
 			verbose:  *verbose,
@@ -282,15 +298,22 @@ func main() {
 			timeout:  *timeout,
 		}
 		if *upstream != "" {
+			log.Infof("Upstream: %s", *upstream)
+
 			addr, err := net.ResolveUDPAddr("udp", *upstream)
+
 			if err != nil {
 				log.Fatalf("Failed to lookup upstream dns server: %s\n", err)
 			}
+
 			srv.upstream = addr
 		}
 
+		log.Infof("Port: %d", *port)
+
 		http.HandleFunc("/dns-query", srv.queryHandler)
-		if err := http.ListenAndServe(":9091", nil); err != nil {
+
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 			log.Fatalf("Failed to start web server: %s\n", err)
 		}
 	}

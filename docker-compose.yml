@@ -1,0 +1,14 @@
+version: '3.5'
+
+services:
+  tinydoh:
+    build: .
+    image: lastzero/tinydoh:latest
+    command: ["-upstream=grimd:53"]
+    volumes:
+      - ".:/go/src/github.com/st3fan/tinydoh"
+    ports:
+      - "80:9091"
+
+  grimd:
+    image: lastzero/grimd:latest
