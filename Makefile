@@ -4,5 +4,5 @@ build:
 clean:
 	rm tinydoh tinydoh.zip
 dockerhub:
-	docker login -u lastzero
+	docker login
 	docker push lastzero/tinydoh:latest
