@@ -97,7 +97,7 @@ func (s *server) queryHandler(w http.ResponseWriter, r *http.Request) {
 		n = string(decoded)
 		t = "A"
 	case "POST":
-		if r.Header.Get("Content-Type") != "application/dns-udpwireformat" {
+		if r.Header.Get("Content-Type") != "application/dns-message" {
 			http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
 			return
 		}
@@ -181,7 +181,7 @@ func (s *server) queryHandler(w http.ResponseWriter, r *http.Request) {
 	if s.verbose {
 		log.Debugf("%s Request for <%s/%s> (%s)\n", r.Method, n, t, elapsed.String())
 	}
-	w.Header().Set("Content-Type", "application/dns-udpwireformat")
+	w.Header().Set("Content-Type", "application/dns-message")
 	w.Write(packed)
 }
 
@@ -209,8 +209,8 @@ func LambdaHandler(r events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 		n = string(decoded)
 		t = "A"
 	case "POST":
-		if r.Headers["content-type"] != "application/dns-udpwireformat" {
-			err = errors.New("unsupported media type, expected application/dns-udpwireformat")
+		if r.Headers["content-type"] != "application/dns-message" {
+			err = errors.New("unsupported media type, expected application/dns-message")
 			log.Println(err)
 			return events.APIGatewayProxyResponse{StatusCode: http.StatusUnsupportedMediaType, Body: err.Error()}, err
 		}
@@ -262,7 +262,7 @@ func LambdaHandler(r events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 	}
 	log.Printf("%s Request for <%s/%s> (%s)\n", r.HTTPMethod, n, t, elapsed.String())
 	resp.Headers = make(map[string]string)
-	resp.Headers["Content-Type"] = "application/dns-udpwireformat"
+	resp.Headers["Content-Type"] = "application/dns-message"
 	resp.StatusCode = http.StatusOK
 	resp.Body = string(packed)
 	return
